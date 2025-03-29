@@ -117,6 +117,7 @@ function meta:IsUnderwater()
 end
 */
 
+-- https://steamcommunity.com/id/NotSoKodya/ Swim Code
 hook_Add("CalcMainActivity", "WATERMESH_Act", function(ply)
     if ply:IsOnGround() or ply:InVehicle() then return end
 
