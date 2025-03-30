@@ -46,13 +46,14 @@ function ENT:SetupDataTables()
 
 end
 
-local DEFVEC = Vector(400, 400, 200)
-
 function ENT:Initialize()
+    --спешка TODO сделать адекватноо
+    local DEFVEC = self:GetBoxSize() != vector_origin and self:GetBoxSize() or Vector(400, 400, 200)
     if SERVER then
         self:SetModel("models/hunter/misc/sphere025x025.mdl")
         self:SetSolid(SOLID_VPHYSICS)
         self:SetCollisionGroup(COLLISION_GROUP_WORLD)
+        self:SetAngles(Angle(0, 0, 180))
 
         self:SetBoxSize( DEFVEC )
 
@@ -117,7 +118,7 @@ function meta:IsUnderwater()
 end
 */
 
--- https://steamcommunity.com/id/NotSoKodya/ Swim Code
+-- Swim code by Kodya
 hook_Add("CalcMainActivity", "WATERMESH_Act", function(ply)
     if ply:IsOnGround() or ply:InVehicle() then return end
 
@@ -211,7 +212,9 @@ if SERVER then
     end)
 
     hook_Add( "EntityTakeDamage", "WATERMESH_BarrelFuck", function(ply, dmginfo)
-        return !inWater(ply:GetPos()) and dmginfo:IsExplosionDamage()
+        if ply:IsPlayer() and dmginfo:IsExplosionDamage() then
+            return inWater(ply:GetPos())
+        end
     end )
 
     function ENT:Think()
