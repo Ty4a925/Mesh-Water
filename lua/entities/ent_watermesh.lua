@@ -32,6 +32,7 @@ ENT.Spawnable = true
 
 local posplus = Vector(0, 0, 30)
 local pospluss = Vector(0, 0, 50)
+local angshit = Angle(0, 0, 180)
 
 function ENT:SetupDataTables()
 
@@ -51,9 +52,10 @@ function ENT:Initialize()
     local DEFVEC = self:GetBoxSize() != vector_origin and self:GetBoxSize() or Vector(400, 400, 200)
     if SERVER then
         self:SetModel("models/hunter/misc/sphere025x025.mdl")
+        self:PhysicsInit(SOLID_VPHYSICS)
         self:SetSolid(SOLID_VPHYSICS)
         self:SetCollisionGroup(COLLISION_GROUP_WORLD)
-        self:SetAngles(Angle(0, 0, 180))
+        self:SetAngles(angshit)
 
         self:SetBoxSize( DEFVEC )
 
@@ -74,7 +76,6 @@ function ENT:SpawnFunction( ply, tr, ClassName )
 
 	local ent = ents.Create( ClassName )
 	ent:SetPos( SpawnPos )
-    ent:SetAngles( Angle(0, 0, 180) )
 	ent:Spawn()
 	ent:Activate()
 
@@ -298,6 +299,18 @@ if SERVER then
         self.SVBoxSize = newvalue
 
     end
+
+    function ENT:PhysicsUpdate( physobj )
+
+        self:SetAngles(angshit)
+        if !self:IsPlayerHolding() then
+
+            physobj:SetVelocity( vector_origin )
+            physobj:Sleep()
+
+        end
+
+    end
 end
 
 if SERVER then return end
@@ -393,7 +406,6 @@ function ENT:GenerateMesh()
 
     self.RENDER_MESH:BuildFromTriangles(verts)
 end
-
 
 local mat = Material("models/wireframe")
 
