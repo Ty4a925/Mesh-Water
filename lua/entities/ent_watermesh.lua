@@ -107,7 +107,7 @@ local meta = FindMetaTable("Entity")
 local OldWaterLevel = meta.WaterLevel
 
 function meta:WaterLevel()
-    local pos = self:GetPos() + pospluss
+    local pos = self:GetPos()
     return inWater(pos) and 3 or OldWaterLevel(self)
 end
 
