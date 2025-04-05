@@ -1,5 +1,6 @@
 -- KAPUT
 
+local LocalPlayer = LocalPlayer
 local Vector = Vector
 local IsValid = IsValid
 local Material = Material
@@ -83,11 +84,33 @@ function ENT:SpawnFunction( ply, tr, ClassName )
 
 end
 
+local meta = FindMetaTable("Entity")
+local OldWaterLevel = meta.WaterLevel
+
+local GetPos = meta.GetPos
+local LocalToWorld = meta.LocalToWorld
+local OBBMins = meta.OBBMins
+local OBBMaxs = meta.OBBMaxs
+local GetPhysicsObject = meta.GetPhysicsObject
+local IsOnFire = meta.IsOnFire
+local Extinguish = meta.Extinguish
+local IsPlayerHolding = meta.IsPlayerHolding
+
+local metaphys = FindMetaTable("PhysObj")
+
+local GetVelocity = metaphys.GetVelocity
+local GetAngleVelocity = metaphys.GetAngleVelocity
+local GetMass = metaphys.GetMass
+local ApplyForceOffset = metaphys.ApplyForceOffset
+local ApplyForceCenter = metaphys.ApplyForceCenter
+local AddAngleVelocity = metaphys.AddAngleVelocity
+local GetMaterial = metaphys.GetMaterial
+
 local function inWater(pos)
     local entities = ents_FindByClass("ent_watermesh")
     for i=1, #entities do
         local ent = entities[i]
-        local entpos = ent:GetPos()
+        local entpos = GetPos(ent)
         local size = ent.SVBoxSize or ent.СLBoxSize
         if !size then return end
         
@@ -103,11 +126,8 @@ local function inWater(pos)
     return false
 end
 
-local meta = FindMetaTable("Entity")
-local OldWaterLevel = meta.WaterLevel
-
 function meta:WaterLevel()
-    local pos = self:GetPos()
+    local pos = GetPos(self)
     return inWater(pos) and 3 or OldWaterLevel(self)
 end
 
@@ -123,7 +143,7 @@ end
 hook_Add("CalcMainActivity", "WATERMESH_Act", function(ply)
     if ply:IsOnGround() or ply:InVehicle() then return end
 
-    local pos = ply:GetPos() + posplus
+    local pos = GetPos(ply) + posplus
     if !inWater(pos) then return end
 
     return ACT_MP_SWIM, -1
@@ -131,7 +151,7 @@ end)
 
 local sv_gravity = GetConVar("sv_gravity")
 hook_Add("Move", "WATERMESH_Movement", function(ply, move)
-    if !inWater(ply:GetPos() + posplus) then return end
+    if !inWater(GetPos(ply) + posplus) then return end
 
     local frametime = FrameTime()
     local maxspeed = ply:GetMaxSpeed()
@@ -160,7 +180,7 @@ hook_Add("Move", "WATERMESH_Movement", function(ply, move)
 end)
 
 hook_Add("FinishMove", "WATERMESH_MovementF", function(ply, move)
-    if !inWater(ply:GetPos() + posplus) then return end
+    if !inWater(GetPos(ply) + posplus) then return end
 
     local vel = move:GetVelocity()
     local pgrav = ply:GetGravity()
@@ -171,7 +191,7 @@ hook_Add("FinishMove", "WATERMESH_MovementF", function(ply, move)
 end)
 
 hook_Add("PlayerFootstep", "WATERMESH_SndFoot", function(ply, pos, foot, sound, volume, rf)
-    if !inWater(ply:GetPos()) then return end
+    if !inWater(GetPos(ply)) then return end
 
     ply:EmitSound(foot == 0 and "Water.StepLeft" or "Water.StepRight", nil, nil, volume, CHAN_BODY)
     return true
@@ -200,12 +220,12 @@ if SERVER then
     }
 
     hook_Add("GetFallDamage", "WATERMESH_FallDMG", function(ply, speed)
-        local pos = ply:GetPos()
+        local pos = GetPos(ply)
         local tr = util.TraceHull({
             start = pos,
             endpos = pos + ply:GetVelocity(),
-            maxs = ply:OBBMaxs(),
-            mins = ply:OBBMins(),
+            maxs = OBBMaxs(ply),
+            mins = OBBMins(ply),
             filter = ply
         })
 
@@ -214,27 +234,27 @@ if SERVER then
 
     hook_Add( "EntityTakeDamage", "WATERMESH_BarrelFuck", function(ply, dmginfo)
         if ply:IsPlayer() and dmginfo:IsExplosionDamage() then
-            return inWater(ply:GetPos())
+            return inWater(GetPos(ply))
         end
     end )
 
     function ENT:Think()
-        local waterHeight = self:GetPos().z
+        local waterHeight = GetPos(self).z
         local entities = ents_FindByClass("prop_*")
 
         for i=1, #entities do
             local prop = entities[i]
 
-            local phys = prop:GetPhysicsObject()
+            local phys = GetPhysicsObject(prop)
             if !IsValid(phys) or phys:IsAsleep() then continue end
 
             local is_airboat = prop:GetClass() == "prop_vehicle_airboat"
-            if !wmat[phys:GetMaterial()] and !is_airboat then continue end
+            if !wmat[GetMaterial(phys)] and !is_airboat then continue end
 
-            local proppos = prop:GetPos()
-            if inWater(proppos) and prop:IsOnFire() then prop:Extinguish() end
+            local proppos = GetPos(prop)
+            if inWater(proppos) and IsOnFire(prop) then Extinguish(prop) end
 
-            local mins, maxs = prop:OBBMins(), prop:OBBMaxs()
+            local mins, maxs = OBBMins(prop), OBBMaxs(prop)
             local minsx, maxsx = mins.x, maxs.x
             local minsy, maxsy = mins.y, maxs.y
             local minsz, maxsz = mins.z, maxs.z
@@ -248,21 +268,21 @@ if SERVER then
             end
 
             obb = {
-                prop:LocalToWorld(Vector(minsx, minsy, minsz)),
-                prop:LocalToWorld(Vector(minsx, minsy, maxsz)),
-                prop:LocalToWorld(Vector(minsx, maxsy, minsz)),
-                prop:LocalToWorld(Vector(maxsx, minsy, minsz)),
-                prop:LocalToWorld(Vector(minsx, maxsy, maxsz)),
-                prop:LocalToWorld(Vector(maxsx, maxsy, minsz)),
-                prop:LocalToWorld(Vector(maxsx, minsy, maxsz)),
-                prop:LocalToWorld(Vector(maxsx, maxsy, maxsz))
+                LocalToWorld(prop, Vector(minsx, minsy, minsz)),
+                LocalToWorld(prop, Vector(minsx, minsy, maxsz)),
+                LocalToWorld(prop, Vector(minsx, maxsy, minsz)),
+                LocalToWorld(prop, Vector(maxsx, minsy, minsz)),
+                LocalToWorld(prop, Vector(minsx, maxsy, maxsz)),
+                LocalToWorld(prop, Vector(maxsx, maxsy, minsz)),
+                LocalToWorld(prop, Vector(maxsx, minsy, maxsz)),
+                LocalToWorld(prop, Vector(maxsx, maxsy, maxsz))
             }
 
-            local vel = phys:GetVelocity()
-            local angvel = phys:GetAngleVelocity()
+            local vel = GetVelocity(phys)
+            local angvel = GetAngleVelocity(phys)
 
             local prop_inwater = false
-            local mass = phys:GetMass()
+            local mass = GetMass(phys)
 
             local plusf = is_airboat and 0.75 or 0.2
             local plusd = is_airboat and -0.001 or -0.003
@@ -273,16 +293,16 @@ if SERVER then
                 if inWater(pos) then
                     local force = Vector(0, 0, mass * math_min((waterHeight - pos.z) * (plusf), is_airboat and 2 or 3))
 
-                    phys:ApplyForceOffset(force, pos)
-                    phys:ApplyForceCenter(mass * vel * (plusd))
+                    ApplyForceOffset(phys, force, pos)
+                    ApplyForceCenter(phys, mass * vel * (plusd))
 
-                    phys:AddAngleVelocity(angvel * -0.01)
+                    AddAngleVelocity(phys, angvel * -0.01)
                     prop_inwater = true
                 end
             end
 
             if prop_inwater then
-                local should_sleep = proppos.z > waterHeight - 30 and (vel + angvel):LengthSqr() < 1 and !prop:IsPlayerHolding()
+                local should_sleep = proppos.z > waterHeight - 30 and (vel + angvel):LengthSqr() < 1 and !IsPlayerHolding(prop)
 
                 if should_sleep then phys:Sleep() end
             end
@@ -303,7 +323,7 @@ if SERVER then
     function ENT:PhysicsUpdate( physobj )
 
         self:SetAngles(angshit)
-        if !self:IsPlayerHolding() then
+        if !IsPlayerHolding(self) then
 
             physobj:SetVelocity( vector_origin )
             physobj:Sleep()
@@ -440,7 +460,7 @@ function ENT:Draw()
         render.SetMaterial(GripMaterial)
     end
 
-    local selfpos = self:GetPos()
+    local selfpos = GetPos(self)
     render.DrawSprite(selfpos, 16, 16, color_white)
 
     local size = self.СLBoxSize
@@ -464,7 +484,7 @@ end
 hook_Add("SetupWorldFog", "WATERMESH_Fog", function()
     local ply = LocalPlayer()
 
-    local pos = ply:GetPos() + pospluss
+    local pos = GetPos(ply) + pospluss
 
     if !inWater(pos) then return end
 
@@ -481,7 +501,7 @@ end)
 hook_Add("SetupSkyboxFog", "WATERMESH_FogS", function(s)
     local ply = LocalPlayer()
 
-    local pos = ply:GetPos() + pospluss
+    local pos = GetPos(ply) + pospluss
     if !inWater(pos) then return end
 
     render.FogMode( MATERIAL_FOG_LINEAR )
@@ -497,7 +517,7 @@ end)
 local changedWater = false
 hook_Add("RenderScreenspaceEffects", "WATERMESH_Effect", function()
     local ply = LocalPlayer()
-    local pos = ply:GetPos() + pospluss
+    local pos = GetPos(ply) + pospluss
     local isInWater = inWater(pos)
 
     if isInWater != changedWater then
