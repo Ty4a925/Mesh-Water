@@ -1,9 +1,11 @@
 -- KAPUT
 
+local FindMetaTable = FindMetaTable
 local LocalPlayer = LocalPlayer
 local Vector = Vector
 local IsValid = IsValid
 local Material = Material
+local CurTime = CurTime
 
 local render = render
 local math = math
@@ -48,9 +50,11 @@ function ENT:SetupDataTables()
 
 end
 
+wentities = wentities or {}
 function ENT:Initialize()
     --спешка TODO сделать адекватноо
     local DEFVEC = self:GetBoxSize() != vector_origin and self:GetBoxSize() or Vector(400, 400, 200)
+    table.insert(wentities, self)
     if SERVER then
         self:SetModel("models/hunter/misc/sphere025x025.mdl")
         self:PhysicsInit(SOLID_VPHYSICS)
@@ -66,6 +70,16 @@ function ENT:Initialize()
         self:SetRenderBounds(-obb, obb)
 
         self.СLBoxSize = DEFVEC
+    end
+end
+
+function ENT:OnRemove()
+    for i=1, #wentities do
+        local ent = wentities[i]
+        if ent == self then
+            table.remove(wentities, i)
+            break
+        end
     end
 end
 
@@ -95,21 +109,14 @@ local GetPhysicsObject = meta.GetPhysicsObject
 local IsOnFire = meta.IsOnFire
 local Extinguish = meta.Extinguish
 local IsPlayerHolding = meta.IsPlayerHolding
+local GetClass = meta.GetClass
 
-local metaphys = FindMetaTable("PhysObj")
-
-local GetVelocity = metaphys.GetVelocity
-local GetAngleVelocity = metaphys.GetAngleVelocity
-local GetMass = metaphys.GetMass
-local ApplyForceOffset = metaphys.ApplyForceOffset
-local ApplyForceCenter = metaphys.ApplyForceCenter
-local AddAngleVelocity = metaphys.AddAngleVelocity
-local GetMaterial = metaphys.GetMaterial
+local metavec = FindMetaTable("Vector")
+local WithinAABox = metavec.WithinAABox
 
 local function inWater(pos)
-    local entities = ents_FindByClass("ent_watermesh")
-    for i=1, #entities do
-        local ent = entities[i]
+    for i=1, #wentities do
+        local ent = wentities[i]
         local entpos = GetPos(ent)
         local size = ent.SVBoxSize or ent.СLBoxSize
         if !size then return end
@@ -119,7 +126,7 @@ local function inWater(pos)
         local min = entpos - Vector(sizex, sizey, 0)
         local max = entpos + Vector(sizex, sizey, -sizez)
 
-        if pos:WithinAABox(min, max) then
+        if WithinAABox(pos, min, max) then
             return true --return pos:WithinAABox(min, max)
         end
     end
@@ -202,6 +209,18 @@ end )
 end )*/
 
 if SERVER then
+    local metaphys = FindMetaTable("PhysObj")
+
+    local GetVelocity = metaphys.GetVelocity
+    local GetAngleVelocity = metaphys.GetAngleVelocity
+    local GetMass = metaphys.GetMass
+    local ApplyForceOffset = metaphys.ApplyForceOffset
+    local ApplyForceCenter = metaphys.ApplyForceCenter
+    local AddAngleVelocity = metaphys.AddAngleVelocity
+    local GetMaterial = metaphys.GetMaterial
+    local IsAsleep = metaphys.IsAsleep
+    local Sleep = metaphys.Sleep
+
     local obb = {}
     local wmat = {
         ["floating_metal_barrel"] = true,
@@ -238,17 +257,28 @@ if SERVER then
         end
     end )
 
-    function ENT:Think()
-        local waterHeight = GetPos(self).z
-        local entities = ents_FindByClass("prop_*")
+    entities = entities or {}
+    local cd = CurTime()
 
-        for i=1, #entities do
+    function ENT:Think()
+        local curtime = CurTime()
+
+        if curtime > cd then
+            entities = ents_FindByClass("prop_*")
+            cd = curtime + 1
+        end
+
+        local waterHeight = GetPos(self).z
+
+        for i = 1, #entities do
             local prop = entities[i]
 
-            local phys = GetPhysicsObject(prop)
-            if !IsValid(phys) or phys:IsAsleep() then continue end
+            if !IsValid(prop) then entities[i] = nil continue end
 
-            local is_airboat = prop:GetClass() == "prop_vehicle_airboat"
+            local phys = GetPhysicsObject(prop)
+            if !IsValid(phys) or IsAsleep(phys) then continue end
+
+            local is_airboat = GetClass(prop) == "prop_vehicle_airboat"
             if !wmat[GetMaterial(phys)] and !is_airboat then continue end
 
             local proppos = GetPos(prop)
@@ -304,11 +334,11 @@ if SERVER then
             if prop_inwater then
                 local should_sleep = proppos.z > waterHeight - 30 and (vel + angvel):LengthSqr() < 1 and !IsPlayerHolding(prop)
 
-                if should_sleep then phys:Sleep() end
+                if should_sleep then Sleep(phys) end
             end
         end
 
-        self:NextThink(CurTime() + 0.01)
+        self:NextThink(curtime + 0.012)
         return true
     end
 
@@ -326,7 +356,7 @@ if SERVER then
         if !IsPlayerHolding(self) then
 
             physobj:SetVelocity( vector_origin )
-            physobj:Sleep()
+            Sleep(physobj)
 
         end
 
@@ -334,6 +364,12 @@ if SERVER then
 end
 
 if SERVER then return end
+
+local metamesh = FindMetaTable("IMesh")
+local BuildFromTriangles = metamesh.BuildFromTriangles
+local Destroy = metamesh.Destroy
+
+local DrawModel = meta.DrawModel
 
 local function generateUV(vertices, scale)
 
@@ -384,8 +420,10 @@ local function generateNormals(vertices)
 
 end
 
-function ENT:GenerateMesh()
-    if self.RENDER_MESH then self.RENDER_MESH:Destroy() end
+local mat = Material("models/wireframe")
+
+function ENT:GetRenderMesh()
+    if self.RENDER_MESH then Destroy(self.RENDER_MESH) end
     self.RENDER_MESH = Mesh()
 
     local verts = {}
@@ -424,14 +462,8 @@ function ENT:GenerateMesh()
     generateNormals(verts)
     generateUV(verts, 1 / 50)
 
-    self.RENDER_MESH:BuildFromTriangles(verts)
-end
+    BuildFromTriangles(self.RENDER_MESH, verts)
 
-local mat = Material("models/wireframe")
-
-function ENT:GetRenderMesh()
-    self:GenerateMesh()
-    if !self.RENDER_MESH then return end
     return { Mesh = self.RENDER_MESH, Material = mat }
 end
 
@@ -441,7 +473,7 @@ local color_gwater = Color(0, 255, 255)
 local angnull = Angle()
 
 function ENT:Draw()
-    self:DrawModel()
+    DrawModel(self)
 
     if GetConVarNumber("cl_draweffectrings") == 0 then return end
 
